@@ -1,0 +1,25 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  height: 100%;
+}
+
+@layer base {
+  :root {
+    --vexo-teal: #98aeb3;
+    --vexo-gray: #d1d6d8;
+    --vexo-black: #0b0808;
+    --vexo-brown: #5d4d45;
+    --vexo-taupe: #967d6a;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+

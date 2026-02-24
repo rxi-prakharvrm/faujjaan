@@ -1,0 +1,60 @@
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+
+# Dependencies
+node_modules/
+web/node_modules/
+
+# Next.js
+web/.next/
+web/out/
+
+# Go
+api/api
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+vendor/
+
+# Build outputs
+dist/
+build/
+*.o
+*.a
+
+# IDE & editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Terraform (if used in infra)
+infra/**/.terraform/
+infra/**/*.tfstate
+infra/**/*.tfstate.*
+infra/**/.terraform.lock.hcl
+
+# Docker
+.docker/
+
+# Misc
+*.local
+.cache/

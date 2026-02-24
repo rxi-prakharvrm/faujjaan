@@ -1,0 +1,239 @@
+openapi: 3.0.3
+info:
+  title: Clothes Shop API
+  version: 0.1.0
+servers:
+  - url: http://localhost:8081
+paths:
+  /healthz:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+  /v1/products:
+    get:
+      summary: List active products
+      responses:
+        "200":
+          description: Product list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  products:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Product"
+  /v1/products/{slug}:
+    get:
+      summary: Get product by slug
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Product
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "404":
+          description: Not found
+  /v1/cart:
+    post:
+      summary: Create a cart
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cart_id:
+                    type: string
+                    format: uuid
+  /v1/cart/{cartID}:
+    get:
+      summary: Get a cart
+      parameters:
+        - in: path
+          name: cartID
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Cart
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Cart"
+  /v1/cart/{cartID}/items:
+    post:
+      summary: Add/update a cart item
+      parameters:
+        - in: path
+          name: cartID
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [variant_id, quantity]
+              properties:
+                variant_id: { type: string, format: uuid }
+                quantity: { type: integer, minimum: 1 }
+      responses:
+        "200": { description: OK }
+  /v1/cart/{cartID}/items/{variantID}:
+    delete:
+      summary: Delete a cart item
+      parameters:
+        - in: path
+          name: cartID
+          required: true
+          schema: { type: string, format: uuid }
+        - in: path
+          name: variantID
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: OK }
+  /v1/checkout:
+    post:
+      summary: Create order from cart (payment stub)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cart_id, customer_name, customer_phone, shipping_address]
+              properties:
+                cart_id: { type: string, format: uuid }
+                customer_name: { type: string }
+                customer_phone: { type: string }
+                customer_email: { type: string }
+                shipping_address:
+                  type: object
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order_id: { type: string, format: uuid }
+                  payment_id: { type: string, format: uuid }
+                  amount_inr: { type: integer }
+                  currency: { type: string }
+                  provider: { type: string }
+                  razorpay:
+                    type: object
+                    nullable: true
+                    properties:
+                      key_id: { type: string }
+                      order_id: { type: string }
+                      amount_inr: { type: integer }
+                      currency: { type: string }
+  /v1/payments/razorpay/verify:
+    post:
+      summary: Verify Razorpay Checkout signature
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [razorpay_order_id, razorpay_payment_id, razorpay_signature]
+              properties:
+                razorpay_order_id: { type: string }
+                razorpay_payment_id: { type: string }
+                razorpay_signature: { type: string }
+      responses:
+        "200": { description: OK }
+        "401": { description: Invalid signature }
+  /v1/webhooks/razorpay:
+    post:
+      summary: Razorpay webhook receiver (signature verified)
+      responses:
+        "200": { description: OK }
+  /v1/admin/login:
+    post:
+      summary: Admin login (JWT)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        "200":
+          description: Token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  role: { type: string }
+components:
+  schemas:
+    Variant:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        product_id: { type: string, format: uuid }
+        sku: { type: string }
+        title: { type: string }
+        size: { type: string }
+        color: { type: string }
+        price_inr: { type: integer }
+        compare_at_price_inr: { type: integer, nullable: true }
+        on_hand: { type: integer }
+        reserved: { type: integer }
+    Product:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        slug: { type: string }
+        name: { type: string }
+        description: { type: string }
+        status: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        variants:
+          type: array
+          items: { $ref: "#/components/schemas/Variant" }
+    CartItem:
+      type: object
+      properties:
+        variant_id: { type: string, format: uuid }
+        sku: { type: string }
+        product_name: { type: string }
+        variant_title: { type: string }
+        unit_price_inr: { type: integer }
+        quantity: { type: integer }
+        line_total_inr: { type: integer }
+    Cart:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/CartItem" }
+        subtotal_inr: { type: integer }
+
