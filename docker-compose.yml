@@ -10,7 +10,7 @@ services:
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      test: [ "CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB" ]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -30,7 +30,7 @@ services:
       db:
         condition: service_healthy
 
-  web:
+  web-storefront:
     image: node:20-alpine
     working_dir: /app
     user: "1000:1000"
@@ -39,16 +39,36 @@ services:
     environment:
       API_SERVER_BASE_URL: ${API_SERVER_BASE_URL:-http://api:8080}
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8081}
-      PORT: 3000
+      PORT: 3001
       HOSTNAME: 0.0.0.0
     volumes:
-      - ./web:/app
+      - ./web-storefront:/app
     ports:
-      - "3001:3000"
-    command: sh -lc "npm install && npm run dev -- --hostname 0.0.0.0 --port 3000"
+      - "3001:3001"
+    command: sh -lc "npm install && npm run dev -- --hostname 0.0.0.0"
+    depends_on:
+      - api
+
+  web-admin:
+    image: node:20-alpine
+    working_dir: /app
+    user: "1000:1000"
+    env_file:
+      - .env
+    environment:
+      API_SERVER_BASE_URL: ${API_SERVER_BASE_URL:-http://api:8080}
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8081}
+      PORT: 3002
+      HOSTNAME: 0.0.0.0
+    volumes:
+      - ./web-admin:/app
+    ports:
+      - "3002:3002"
+    command: sh -lc "npm install && npm run dev -- --hostname 0.0.0.0"
     depends_on:
       - api
 
 volumes:
   db_data:
+
 
