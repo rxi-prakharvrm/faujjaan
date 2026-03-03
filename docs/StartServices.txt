@@ -1,0 +1,47 @@
+Supabase Integration & Local Dev Setup — Walkthrough
+What Was Done
+1. Created 
+.env
+ with Supabase Connection
+Created 
+.env
+ with DATABASE_URL pointing to Supabase, plus all required env vars for local development.
+
+2. Ran Migrations & Seed Data
+Created a migration runner at 
+cmd/migrate/main.go
+ and executed both schema and seed migrations against Supabase.
+
+3. Started All Services
+Backend (Go API) → localhost:8080 — connected to Supabase ✅
+Frontend (Next.js) → localhost:3000 — fetching data from backend ✅
+Verification
+Homepage
+Homepage loads correctly
+Review
+Homepage loads correctly
+
+Shop Page — Products from Supabase
+Shop page showing 2 products from Supabase
+Review
+Shop page showing 2 products from Supabase
+
+How to Start Services Locally
+Since make and Docker aren't in your PATH, use these PowerShell commands:
+
+Terminal 1 — Backend:
+
+powershell
+cd api
+$env:DATABASE_URL="postgresql://postgres:amantya@123@db.octddaqlkwpmyufouqlj.supabase.co:5432/postgres"
+$env:JWT_SECRET="your_jwt_secret_here"
+$env:AUTO_MIGRATE="0"
+$env:DEV_ALLOW_ALL_CORS="1"
+go run ./cmd/api/main.go
+Terminal 2 — Frontend:
+
+powershell
+cd web
+$env:API_SERVER_BASE_URL="http://localhost:8080"
+$env:NEXT_PUBLIC_API_BASE_URL="http://localhost:8080"
+npm run dev
