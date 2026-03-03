@@ -8,10 +8,16 @@
 # Dependencies
 node_modules/
 web/node_modules/
+web-admin/node_modules/
+web-storefront/node_modules/
 
 # Next.js
 web/.next/
 web/out/
+web-admin/.next/
+web-admin/out/
+web-storefront/.next/
+web-storefront/out/
 
 # Go
 api/api

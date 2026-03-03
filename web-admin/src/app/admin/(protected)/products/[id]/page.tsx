@@ -40,9 +40,8 @@ export default function AdminEditProductPage() {
     });
   }, [productId, token]);
 
-  if (!token) return null;
-
-  if (!product) {
+  // Ensure we have both token and product before rendering the editor
+  if (!token || !product) {
     return (
       <main className="space-y-3">
         <div className="text-slate-600">Loading…</div>

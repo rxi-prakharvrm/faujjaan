@@ -1,4 +1,0 @@
-{
-  "/(storefront)/page": "app/(storefront)/page.js",
-  "/(storefront)/catalog/page": "app/(storefront)/catalog/page.js"
-}
