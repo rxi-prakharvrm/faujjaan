@@ -22,29 +22,65 @@ func New(db *pgxpool.Pool) *Store {
 	return &Store{db: db}
 }
 
-type AdminUser struct {
-	ID           uuid.UUID
-	Email        string
-	PasswordHash string
+type User struct {
+	ID           uuid.UUID `json:"id"`
+	Email        string    `json:"email"`
+	PasswordHash string    `json:"-"`
+	IsActive     bool      `json:"is_active"`
 }
 
-func (s *Store) GetAdminUserByEmail(ctx context.Context, email string) (AdminUser, error) {
+func (s *Store) GetUserByEmail(ctx context.Context, email string, roleKey string) (User, error) {
 	row := s.db.QueryRow(ctx, `
-SELECT u.id, u.email, u.password_hash
+SELECT u.id, u.email, u.password_hash, u.is_active
 FROM users u
 JOIN user_roles ur ON ur.user_id = u.id
 JOIN roles r ON r.id = ur.role_id
-WHERE u.email = $1 AND u.is_active = TRUE AND r.key = 'admin'
+WHERE u.email = $1 AND u.is_active = TRUE AND r.key = $2
 LIMIT 1
-`, email)
-	var u AdminUser
-	if err := row.Scan(&u.ID, &u.Email, &u.PasswordHash); err != nil {
+`, email, roleKey)
+	var u User
+	if err := row.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.IsActive); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return AdminUser{}, ErrNotFound
+			return User{}, ErrNotFound
 		}
-		return AdminUser{}, err
+		return User{}, err
 	}
 	return u, nil
+}
+
+func (s *Store) CreateUserWithRole(ctx context.Context, email, passwordHash, roleKey string) (User, error) {
+	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return User{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	var userID uuid.UUID
+	err = tx.QueryRow(ctx, `
+INSERT INTO users (email, password_hash)
+VALUES ($1, $2)
+RETURNING id
+`, email, passwordHash).Scan(&userID)
+	if err != nil {
+		return User{}, err
+	}
+
+	var roleID uuid.UUID
+	err = tx.QueryRow(ctx, `SELECT id FROM roles WHERE key = $1`, roleKey).Scan(&roleID)
+	if err != nil {
+		return User{}, err
+	}
+
+	_, err = tx.Exec(ctx, `INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)`, userID, roleID)
+	if err != nil {
+		return User{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return User{}, err
+	}
+
+	return User{ID: userID, Email: email, IsActive: true}, nil
 }
 
 type Product struct {
@@ -380,17 +416,39 @@ type CartItem struct {
 
 type Cart struct {
 	ID       uuid.UUID  `json:"id"`
+	UserID   *uuid.UUID `json:"user_id,omitempty"`
 	Status   string     `json:"status"`
 	Items    []CartItem `json:"items"`
 	Subtotal int        `json:"subtotal_inr"`
 }
 
-func (s *Store) CreateCart(ctx context.Context) (uuid.UUID, error) {
+func (s *Store) CreateCart(ctx context.Context, userID *uuid.UUID) (uuid.UUID, error) {
 	var id uuid.UUID
+	if userID != nil {
+		err := s.db.QueryRow(ctx, `INSERT INTO carts (user_id) VALUES ($1) RETURNING id`, userID).Scan(&id)
+		return id, err
+	}
 	if err := s.db.QueryRow(ctx, `INSERT INTO carts DEFAULT VALUES RETURNING id`).Scan(&id); err != nil {
 		return uuid.Nil, err
 	}
 	return id, nil
+}
+
+func (s *Store) LinkCartToUser(ctx context.Context, cartID, userID uuid.UUID) error {
+	_, err := s.db.Exec(ctx, `UPDATE carts SET user_id = $1, updated_at = now() WHERE id = $2`, userID, cartID)
+	return err
+}
+
+func (s *Store) GetCartByUserID(ctx context.Context, userID uuid.UUID) (Cart, error) {
+	var cartID uuid.UUID
+	err := s.db.QueryRow(ctx, `SELECT id FROM carts WHERE user_id = $1 AND status = 'open' ORDER BY updated_at DESC LIMIT 1`, userID).Scan(&cartID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Cart{}, ErrNotFound
+		}
+		return Cart{}, err
+	}
+	return s.GetCart(ctx, cartID)
 }
 
 func (s *Store) UpsertCartItem(ctx context.Context, cartID uuid.UUID, variantID uuid.UUID, qty int) error {
@@ -414,9 +472,9 @@ func (s *Store) DeleteCartItem(ctx context.Context, cartID, variantID uuid.UUID)
 }
 
 func (s *Store) GetCart(ctx context.Context, cartID uuid.UUID) (Cart, error) {
-	row := s.db.QueryRow(ctx, `SELECT id, status FROM carts WHERE id=$1`, cartID)
+	row := s.db.QueryRow(ctx, `SELECT id, user_id, status FROM carts WHERE id=$1`, cartID)
 	var c Cart
-	if err := row.Scan(&c.ID, &c.Status); err != nil {
+	if err := row.Scan(&c.ID, &c.UserID, &c.Status); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Cart{}, ErrNotFound
 		}

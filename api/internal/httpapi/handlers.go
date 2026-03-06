@@ -37,7 +37,12 @@ func (s *Server) handleGetProduct(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateCart(w http.ResponseWriter, r *http.Request) {
-	id, err := s.store.CreateCart(r.Context())
+	var uid *uuid.UUID
+	if p, ok := auth.PrincipalFrom(r.Context()); ok {
+		uid = &p.UserID
+	}
+
+	id, err := s.store.CreateCart(r.Context(), uid)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create cart")
 		return
@@ -206,7 +211,7 @@ func (s *Server) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	u, err := s.store.GetAdminUserByEmail(r.Context(), req.Email)
+	u, err := s.store.GetUserByEmail(r.Context(), req.Email, "admin")
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, "invalid credentials")
 		return
@@ -444,5 +449,87 @@ func (s *Server) handleAdminGetOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, o)
+}
+
+type registerRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
+	var req registerRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+	if req.Email == "" || req.Password == "" {
+		writeError(w, http.StatusBadRequest, "email and password required")
+		return
+	}
+
+	hash, err := auth.HashPassword(req.Password)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to hash password")
+		return
+	}
+
+	u, err := s.store.CreateUserWithRole(r.Context(), req.Email, hash, string(auth.RoleCustomer))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "registration failed, possibly email already exists")
+		return
+	}
+
+	token, err := s.auth.IssueToken(u.ID, auth.RoleCustomer)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to issue token")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"token": token, "user": u})
+}
+
+type loginRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	var req loginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+	if req.Email == "" || req.Password == "" {
+		writeError(w, http.StatusBadRequest, "email and password required")
+		return
+	}
+
+	u, err := s.store.GetUserByEmail(r.Context(), req.Email, string(auth.RoleCustomer))
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "invalid credentials")
+		return
+	}
+	if !auth.CheckPasswordHash(req.Password, u.PasswordHash) {
+		writeError(w, http.StatusUnauthorized, "invalid credentials")
+		return
+	}
+
+	token, err := s.auth.IssueToken(u.ID, auth.RoleCustomer)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to issue token")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"token": token, "user": u})
+}
+
+func (s *Server) handleGetMe(w http.ResponseWriter, r *http.Request) {
+	p, ok := auth.PrincipalFrom(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "not authenticated")
+		return
+	}
+	// We could fetch full user info here if needed
+	writeJSON(w, http.StatusOK, map[string]any{"id": p.UserID, "role": p.Role})
 }
 

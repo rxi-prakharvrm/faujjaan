@@ -146,3 +146,31 @@ export async function verifyRazorpayPayment(input: {
   });
 }
 
+export async function login(input: {
+  email: string;
+  password: string;
+}): Promise<{ token: string; user: any }> {
+  return await apiFetch("/v1/login", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function register(input: {
+  email: string;
+  password: string;
+}): Promise<{ token: string; user: any }> {
+  return await apiFetch("/v1/register", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function fetchMe(token: string): Promise<any> {
+  return await apiFetch("/v1/me", {
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  });
+}
+
