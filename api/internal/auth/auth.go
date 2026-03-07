@@ -14,7 +14,8 @@ import (
 type Role string
 
 const (
-	RoleAdmin Role = "admin"
+	RoleAdmin    Role = "admin"
+	RoleCustomer Role = "customer"
 )
 
 type Claims struct {
@@ -47,10 +48,10 @@ func NewService(secret string, accessTTL time.Duration) *Service {
 	return &Service{secret: []byte(secret), ttl: accessTTL}
 }
 
-func (s *Service) IssueAdminToken(userID uuid.UUID) (string, error) {
+func (s *Service) IssueToken(userID uuid.UUID, role Role) (string, error) {
 	now := time.Now()
 	claims := Claims{
-		Role: string(RoleAdmin),
+		Role: string(role),
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   userID.String(),
 			IssuedAt:  jwt.NewNumericDate(now),
@@ -59,6 +60,10 @@ func (s *Service) IssueAdminToken(userID uuid.UUID) (string, error) {
 	}
 	t := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return t.SignedString(s.secret)
+}
+
+func (s *Service) IssueAdminToken(userID uuid.UUID) (string, error) {
+	return s.IssueToken(userID, RoleAdmin)
 }
 
 func (s *Service) Parse(token string) (Principal, error) {

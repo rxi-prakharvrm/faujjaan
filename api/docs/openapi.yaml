@@ -1,0 +1,282 @@
+openapi: 3.0.3
+info:
+  title: Vexo API
+  description: Backend API for Vexo Streetwear & Activewear eCommerce platform.
+  version: 1.0.0
+servers:
+  - url: http://localhost:8081
+    description: Development server
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Product:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        slug: { type: string }
+        name: { type: string }
+        description: { type: string }
+        status: { type: string, enum: [draft, active, archived] }
+        variants:
+          type: array
+          items: { $ref: '#/components/schemas/ProductVariant' }
+
+    ProductVariant:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        sku: { type: string }
+        title: { type: string }
+        size: { type: string }
+        color: { type: string }
+        price_inr: { type: integer }
+        compare_at_price_inr: { type: integer, nullable: true }
+
+    Cart:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid, nullable: true }
+        status: { type: string }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/CartItem' }
+        subtotal_inr: { type: integer }
+
+    CartItem:
+      type: object
+      properties:
+        variant_id: { type: string, format: uuid }
+        sku: { type: string }
+        product: { type: string }
+        variant: { type: string }
+        unit_price_inr: { type: integer }
+        quantity: { type: integer }
+        line_total_inr: { type: integer }
+
+    Order:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string }
+        total_inr: { type: integer }
+        customer_name: { type: string }
+        customer_email: { type: string }
+        created_at: { type: string, format: date-time }
+
+paths:
+  /healthz:
+    get:
+      summary: Health check
+      responses:
+        200:
+          description: OK
+
+  /v1/register:
+    post:
+      summary: Customer Registration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        201:
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  user: { type: object }
+
+  /v1/login:
+    post:
+      summary: Customer Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  user: { type: object }
+
+  /v1/me:
+    get:
+      summary: Get current session info
+      security:
+        - bearerAuth: []
+      responses:
+        200:
+          description: OK
+        401:
+          description: Unauthorized
+
+  /v1/products:
+    get:
+      summary: List all active products
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  products:
+                    type: array
+                    items: { $ref: '#/components/schemas/Product' }
+
+  /v1/products/{slug}:
+    get:
+      summary: Get product by slug
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Product' }
+        404:
+          description: Not Found
+
+  /v1/cart:
+    post:
+      summary: Create a new cart
+      security:
+        - bearerAuth: []
+      responses:
+        201:
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cart_id: { type: string, format: uuid }
+
+  /v1/cart/{cartID}:
+    get:
+      summary: Get cart details
+      parameters:
+        - name: cartID
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Cart' }
+
+  /v1/cart/{cartID}/items:
+    post:
+      summary: Add or update item in cart
+      parameters:
+        - name: cartID
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [variant_id, quantity]
+              properties:
+                variant_id: { type: string, format: uuid }
+                quantity: { type: integer, minimum: 1, maximum: 20 }
+      responses:
+        200:
+          description: OK
+
+  /v1/cart/{cartID}/items/{variantID}:
+    delete:
+      summary: Remove item from cart
+      parameters:
+        - name: cartID
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: variantID
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        200:
+          description: OK
+
+  /v1/checkout:
+    post:
+      summary: Checkout from cart
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cart_id, customer_name, customer_phone]
+              properties:
+                cart_id: { type: string, format: uuid }
+                customer_name: { type: string }
+                customer_phone: { type: string }
+                customer_email: { type: string }
+                shipping_address: { type: object }
+      responses:
+        201:
+          description: Order Created
+
+  /v1/admin/login:
+    post:
+      summary: Admin Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  role: { type: string, example: admin }

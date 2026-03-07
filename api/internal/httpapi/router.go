@@ -51,10 +51,40 @@ func (s *Server) Router() http.Handler {
 	})
 
 	r.Route("/v1", func(r chi.Router) {
+		r.Post("/register", s.handleRegister)
+		r.Post("/login", s.handleLogin)
+		r.Group(func(r chi.Router) {
+			r.Use(s.auth.Middleware)
+			r.Get("/me", s.handleGetMe)
+		})
+
 		r.Get("/products", s.handleListProducts)
 		r.Get("/products/{slug}", s.handleGetProduct)
 
-		r.Post("/cart", s.handleCreateCart)
+		r.Group(func(r chi.Router) {
+			// Optional auth for cart creation
+			r.Use(func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					h := r.Header.Get("Authorization")
+					if h != "" && s.auth != nil {
+						// Try to parse token but don't fail if invalid or missing
+						// This is a simple way to handle optional auth
+						// Better would be a dedicated OptionalMiddleware
+						token := h
+						if len(h) > 7 && (h[:7] == "Bearer " || h[:7] == "bearer ") {
+							token = h[7:]
+						}
+						if p, err := s.auth.Parse(token); err == nil {
+							next.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), p)))
+							return
+						}
+					}
+					next.ServeHTTP(w, r)
+				})
+			})
+			r.Post("/cart", s.handleCreateCart)
+		})
+
 		r.Get("/cart/{cartID}", s.handleGetCart)
 		r.Post("/cart/{cartID}/items", s.handleUpsertCartItem)
 		r.Delete("/cart/{cartID}/items/{variantID}", s.handleDeleteCartItem)
