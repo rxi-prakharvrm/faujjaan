@@ -24,6 +24,9 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgres://clothes:clothes@db:5432/clothes_shop?sslmode=disable}
       AUTO_MIGRATE: ${AUTO_MIGRATE:-1}
       DEV_ALLOW_ALL_CORS: ${DEV_ALLOW_ALL_CORS:-1}
+      RESEND_API_KEY: ${RESEND_API_KEY:-re_3c8DJqH5_9C6ChKcVqiyj47ypeQpkGxEm}
+      RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-onboarding@resend.dev}
+      STOREFRONT_URL: ${STOREFRONT_URL:-http://localhost:3001}
     ports:
       - "8081:8080"
     depends_on:

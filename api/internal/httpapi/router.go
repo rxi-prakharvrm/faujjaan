@@ -10,6 +10,7 @@ import (
 
 	"clothes-shop/api/internal/auth"
 	"clothes-shop/api/internal/config"
+	"clothes-shop/api/internal/email"
 	"clothes-shop/api/internal/store"
 )
 
@@ -17,10 +18,11 @@ type Server struct {
 	cfg   config.Config
 	store *store.Store
 	auth  *auth.Service
+	email email.Service
 }
 
-func New(cfg config.Config, store *store.Store, authSvc *auth.Service) *Server {
-	return &Server{cfg: cfg, store: store, auth: authSvc}
+func New(cfg config.Config, store *store.Store, authSvc *auth.Service, emailSvc email.Service) *Server {
+	return &Server{cfg: cfg, store: store, auth: authSvc, email: emailSvc}
 }
 
 func (s *Server) Router() http.Handler {
@@ -51,8 +53,17 @@ func (s *Server) Router() http.Handler {
 	})
 
 	r.Route("/v1", func(r chi.Router) {
-		r.Post("/register", s.handleRegister)
-		r.Post("/login", s.handleLogin)
+		r.Post("/register", s.handleRegister) // Legacy
+		r.Post("/login", s.handleLogin)       // Legacy
+
+		r.Route("/auth", func(r chi.Router) {
+			r.Post("/register/start", s.handleRegisterStart)
+			r.Post("/register/verify", s.handleRegisterVerify)
+			r.Post("/login/options", s.handleLoginOptions)
+			r.Post("/login/password", s.handleLoginPassword)
+			r.Post("/login/otp/request", s.handleOTPRequest)
+			r.Post("/login/otp/verify", s.handleOTPVerify)
+		})
 		r.Group(func(r chi.Router) {
 			r.Use(s.auth.Middleware)
 			r.Get("/me", s.handleGetMe)

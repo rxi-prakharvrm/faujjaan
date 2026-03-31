@@ -137,6 +137,137 @@ paths:
         401:
           description: Unauthorized
 
+  /v1/auth/register/start:
+    post:
+      summary: Step 1 - Start Registration
+      description: Creates an unverified user and sends a verification email.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        201:
+          description: Created - Check Email
+
+  /v1/auth/register/verify:
+    post:
+      summary: Step 2 - Verify Email
+      description: Verifies the email token and auto-logs the user in.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        200:
+          description: OK - Logged in
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  user_id: { type: string, format: uuid }
+
+  /v1/auth/login/options:
+    post:
+      summary: Step 1 - Check Login Options
+      description: Checks if an email exists and is verified to determine next UI step.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string }
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  exists: { type: boolean }
+                  is_verified: { type: boolean }
+
+  /v1/auth/login/password:
+    post:
+      summary: Login via Password
+      description: Standard password login. Fails if unverified.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+
+  /v1/auth/login/otp/request:
+    post:
+      summary: Request OTP
+      description: Generates a 6-digit OTP and emails it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string }
+      responses:
+        200:
+          description: OTP Sent
+
+  /v1/auth/login/otp/verify:
+    post:
+      summary: Verify OTP & Login
+      description: Checks the 6-digit OTP and logs the user in.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, otp]
+              properties:
+                email: { type: string }
+                otp: { type: string }
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+
   /v1/products:
     get:
       summary: List all active products

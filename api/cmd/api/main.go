@@ -12,6 +12,7 @@ import (
 	"clothes-shop/api/internal/auth"
 	"clothes-shop/api/internal/config"
 	"clothes-shop/api/internal/db"
+	"clothes-shop/api/internal/email"
 	"clothes-shop/api/internal/httpapi"
 	"clothes-shop/api/internal/migrate"
 	"clothes-shop/api/internal/store"
@@ -33,22 +34,16 @@ func main() {
 	defer pool.Close()
 
 	if cfg.AutoMigrate {
-		exists, err := db.TableExists(ctx, pool, "roles")
-		if err != nil {
-			log.Fatalf("migration precheck error: %v", err)
-		}
-		if exists {
-			log.Printf("auto-migrate enabled; schema appears present, skipping")
-		} else {
-			if err := migrate.Up(cfg.DatabaseURL, "/migrations"); err != nil {
-				log.Fatalf("migration error: %v", err)
-			}
+		log.Printf("auto-migrate enabled; checking for pending migrations...")
+		if err := migrate.Up(cfg.DatabaseURL, "/migrations"); err != nil && err.Error() != "no change" {
+			log.Fatalf("migration error: %v", err)
 		}
 	}
 
 	st := store.New(pool)
 	authSvc := auth.NewService(cfg.JWTSecret, cfg.JWTAccessTTL)
-	srv := httpapi.New(cfg, st, authSvc)
+	emailSvc := email.NewService(cfg.ResendAPIKey, cfg.ResendFromEmail, cfg.StorefrontURL)
+	srv := httpapi.New(cfg, st, authSvc, emailSvc)
 
 	httpServer := &http.Server{
 		Addr:         cfg.Addr,

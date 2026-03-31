@@ -27,11 +27,12 @@ type User struct {
 	Email        string    `json:"email"`
 	PasswordHash string    `json:"-"`
 	IsActive     bool      `json:"is_active"`
+	IsVerified   bool      `json:"is_verified"`
 }
 
 func (s *Store) GetUserByEmail(ctx context.Context, email string, roleKey string) (User, error) {
 	row := s.db.QueryRow(ctx, `
-SELECT u.id, u.email, u.password_hash, u.is_active
+SELECT u.id, u.email, u.password_hash, u.is_active, u.is_verified
 FROM users u
 JOIN user_roles ur ON ur.user_id = u.id
 JOIN roles r ON r.id = ur.role_id
@@ -39,13 +40,32 @@ WHERE u.email = $1 AND u.is_active = TRUE AND r.key = $2
 LIMIT 1
 `, email, roleKey)
 	var u User
-	if err := row.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.IsActive); err != nil {
+	if err := row.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.IsActive, &u.IsVerified); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return User{}, ErrNotFound
 		}
 		return User{}, err
 	}
 	return u, nil
+}
+
+func (s *Store) CheckEmailExists(ctx context.Context, email, roleKey string) (bool, bool, error) {
+	row := s.db.QueryRow(ctx, `
+SELECT u.is_verified
+FROM users u
+JOIN user_roles ur ON ur.user_id = u.id
+JOIN roles r ON r.id = ur.role_id
+WHERE u.email = $1 AND u.is_active = TRUE AND r.key = $2
+LIMIT 1
+`, email, roleKey)
+	var isVerified bool
+	if err := row.Scan(&isVerified); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, false, nil
+		}
+		return false, false, err
+	}
+	return true, isVerified, nil
 }
 
 func (s *Store) CreateUserWithRole(ctx context.Context, email, passwordHash, roleKey string) (User, error) {
@@ -80,7 +100,105 @@ RETURNING id
 		return User{}, err
 	}
 
-	return User{ID: userID, Email: email, IsActive: true}, nil
+	return User{ID: userID, Email: email, IsActive: true, IsVerified: false}, nil
+}
+
+func (s *Store) CreateEmailVerification(ctx context.Context, userID uuid.UUID, tokenHash string, duration time.Duration) error {
+	_, err := s.db.Exec(ctx, `
+INSERT INTO email_verifications (user_id, token_hash, expires_at)
+VALUES ($1, $2, $3)
+`, userID, tokenHash, time.Now().Add(duration))
+	return err
+}
+
+func (s *Store) VerifyEmail(ctx context.Context, tokenHash string) (uuid.UUID, error) {
+	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return uuid.Nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	var verificationID uuid.UUID
+	var userID uuid.UUID
+	err = tx.QueryRow(ctx, `
+SELECT id, user_id FROM email_verifications
+WHERE token_hash = $1 AND expires_at > NOW() AND used = FALSE
+`, tokenHash).Scan(&verificationID, &userID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return uuid.Nil, errors.New("invalid or expired token")
+		}
+		return uuid.Nil, err
+	}
+
+	_, err = tx.Exec(ctx, `UPDATE email_verifications SET used = TRUE WHERE id = $1`, verificationID)
+	if err != nil {
+		return uuid.Nil, err
+	}
+
+	_, err = tx.Exec(ctx, `UPDATE users SET is_verified = TRUE WHERE id = $1`, userID)
+	if err != nil {
+		return uuid.Nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return uuid.Nil, err
+	}
+
+	return userID, nil
+}
+
+func (s *Store) CreateOTP(ctx context.Context, email, otpHash string, duration time.Duration) error {
+	_, err := s.db.Exec(ctx, `
+INSERT INTO login_otps (email, otp_hash, expires_at)
+VALUES ($1, $2, $3)
+`, email, otpHash, time.Now().Add(duration))
+	return err
+}
+
+func (s *Store) VerifyOTP(ctx context.Context, email, otpHash string) (bool, error) {
+	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback(ctx)
+
+	var otpID uuid.UUID
+	var attempts int
+	err = tx.QueryRow(ctx, `
+SELECT id, attempts FROM login_otps
+WHERE email = $1 AND otp_hash = $2 AND expires_at > NOW()
+ORDER BY created_at DESC LIMIT 1
+`, email, otpHash).Scan(&otpID, &attempts)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Try to increment attempts on the latest unexpired OTP for this email
+			tx.Exec(ctx, `
+UPDATE login_otps SET attempts = attempts + 1 
+WHERE id = (SELECT id FROM login_otps WHERE email = $1 AND expires_at > NOW() ORDER BY created_at DESC LIMIT 1)
+`, email)
+			tx.Commit(ctx)
+			return false, errors.New("invalid or expired otp")
+		}
+		return false, err
+	}
+
+	if attempts >= 3 {
+		return false, errors.New("too many failed attempts, request a new otp")
+	}
+
+	// Delete OTP after successful use
+	_, err = tx.Exec(ctx, `DELETE FROM login_otps WHERE id = $1`, otpID)
+	if err != nil {
+		return false, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return false, err
+	}
+
+	return true, nil
 }
 
 type Product struct {
