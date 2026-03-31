@@ -24,6 +24,10 @@ type Config struct {
 	RazorpayKeyID        string
 	RazorpayKeySecret    string
 	RazorpayWebhookSecret string
+
+	ResendAPIKey    string
+	ResendFromEmail string
+	StorefrontURL   string
 }
 
 func Load() (Config, error) {
@@ -45,6 +49,10 @@ func Load() (Config, error) {
 	c.RazorpayKeyID = os.Getenv("RAZORPAY_KEY_ID")
 	c.RazorpayKeySecret = os.Getenv("RAZORPAY_KEY_SECRET")
 	c.RazorpayWebhookSecret = os.Getenv("RAZORPAY_WEBHOOK_SECRET")
+
+	c.ResendAPIKey = os.Getenv("RESEND_API_KEY")
+	c.ResendFromEmail = envOr("RESEND_FROM_EMAIL", "onboarding@resend.dev")
+	c.StorefrontURL = envOr("STOREFRONT_URL", "http://localhost:3001")
 
 	if c.DatabaseURL == "" {
 		return Config{}, errors.New("DATABASE_URL is required")
