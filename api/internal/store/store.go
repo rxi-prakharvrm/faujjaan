@@ -201,6 +201,70 @@ WHERE id = (SELECT id FROM login_otps WHERE email = $1 AND expires_at > NOW() OR
 	return true, nil
 }
 
+func (s *Store) CreatePasswordReset(ctx context.Context, email, otpHash string, duration time.Duration) error {
+	_, err := s.db.Exec(ctx, `
+INSERT INTO password_resets (email, otp_hash, expires_at)
+VALUES ($1, $2, $3)
+`, email, otpHash, time.Now().Add(duration))
+	return err
+}
+
+func (s *Store) VerifyPasswordReset(ctx context.Context, email, otpHash string) (bool, error) {
+	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback(ctx)
+
+	var resetID uuid.UUID
+	var attempts int
+	err = tx.QueryRow(ctx, `
+SELECT id, attempts FROM password_resets
+WHERE email = $1 AND otp_hash = $2 AND expires_at > NOW() AND used = FALSE
+ORDER BY created_at DESC LIMIT 1
+`, email, otpHash).Scan(&resetID, &attempts)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Increment attempts on the latest unexpired reset for this email
+			tx.Exec(ctx, `
+UPDATE password_resets SET attempts = attempts + 1 
+WHERE id = (SELECT id FROM password_resets WHERE email = $1 AND expires_at > NOW() AND used = FALSE ORDER BY created_at DESC LIMIT 1)
+`, email)
+			_ = tx.Commit(ctx)
+			return false, errors.New("invalid or expired otp")
+		}
+		return false, err
+	}
+
+	if attempts >= 3 {
+		return false, errors.New("too many failed attempts, request a new otp")
+	}
+
+	// Mark as used
+	_, err = tx.Exec(ctx, `UPDATE password_resets SET used = TRUE WHERE id = $1`, resetID)
+	if err != nil {
+		return false, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+func (s *Store) UpdatePassword(ctx context.Context, email, newPasswordHash string) error {
+	ct, err := s.db.Exec(ctx, `UPDATE users SET password_hash = $2 WHERE email = $1`, email, newPasswordHash)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 type Product struct {
 	ID          uuid.UUID `json:"id"`
 	Slug        string    `json:"slug"`
@@ -329,13 +393,13 @@ type CreateProductInput struct {
 }
 
 type CreateVariantInput struct {
-	SKU              string
-	Title            string
-	Size             string
-	Color            string
-	PriceINR         int
+	SKU               string
+	Title             string
+	Size              string
+	Color             string
+	PriceINR          int
 	CompareAtPriceINR *int
-	OnHand           int
+	OnHand            int
 }
 
 func (s *Store) AdminCreateProduct(ctx context.Context, in CreateProductInput) (Product, error) {
@@ -387,16 +451,16 @@ ON CONFLICT (variant_id) DO UPDATE SET on_hand = EXCLUDED.on_hand, reserved = 0,
 			return Product{}, err
 		}
 		out.Variants = append(out.Variants, Variant{
-			ID:               vid,
-			ProductID:        pid,
-			SKU:              v.SKU,
-			Title:            v.Title,
-			Size:             v.Size,
-			Color:            v.Color,
-			PriceINR:         v.PriceINR,
+			ID:                vid,
+			ProductID:         pid,
+			SKU:               v.SKU,
+			Title:             v.Title,
+			Size:              v.Size,
+			Color:             v.Color,
+			PriceINR:          v.PriceINR,
 			CompareAtPriceINR: v.CompareAtPriceINR,
-			OnHand:           v.OnHand,
-			Reserved:         0,
+			OnHand:            v.OnHand,
+			Reserved:          0,
 		})
 		_ = vCreatedAt
 		_ = vUpdatedAt
@@ -424,13 +488,13 @@ WHERE id=$1
 }
 
 type CreateVariantForProductInput struct {
-	SKU              string
-	Title            string
-	Size             string
-	Color            string
-	PriceINR         int
+	SKU               string
+	Title             string
+	Size              string
+	Color             string
+	PriceINR          int
 	CompareAtPriceINR *int
-	OnHand           int
+	OnHand            int
 }
 
 func (s *Store) AdminCreateVariant(ctx context.Context, productID uuid.UUID, in CreateVariantForProductInput) (Variant, error) {
@@ -462,16 +526,16 @@ VALUES ($1, $2, 0)
 		return Variant{}, err
 	}
 	return Variant{
-		ID:               vid,
-		ProductID:        productID,
-		SKU:              in.SKU,
-		Title:            in.Title,
-		Size:             in.Size,
-		Color:            in.Color,
-		PriceINR:         in.PriceINR,
+		ID:                vid,
+		ProductID:         productID,
+		SKU:               in.SKU,
+		Title:             in.Title,
+		Size:              in.Size,
+		Color:             in.Color,
+		PriceINR:          in.PriceINR,
 		CompareAtPriceINR: in.CompareAtPriceINR,
-		OnHand:           in.OnHand,
-		Reserved:         0,
+		OnHand:            in.OnHand,
+		Reserved:          0,
 	}, nil
 }
 
@@ -644,11 +708,11 @@ type CheckoutCustomer struct {
 }
 
 type CheckoutResult struct {
-	OrderID    uuid.UUID `json:"order_id"`
-	PaymentID  uuid.UUID `json:"payment_id"`
-	AmountINR  int       `json:"amount_inr"`
-	Currency   string    `json:"currency"`
-	Provider   string    `json:"provider"`
+	OrderID   uuid.UUID `json:"order_id"`
+	PaymentID uuid.UUID `json:"payment_id"`
+	AmountINR int       `json:"amount_inr"`
+	Currency  string    `json:"currency"`
+	Provider  string    `json:"provider"`
 }
 
 func (s *Store) CheckoutFromCart(ctx context.Context, cartID uuid.UUID, customer CheckoutCustomer, shippingFlatINR int, taxRateBps int) (CheckoutResult, error) {
@@ -977,20 +1041,20 @@ LIMIT $1
 }
 
 type OrderDetail struct {
-	ID             uuid.UUID        `json:"id"`
-	Status         string           `json:"status"`
-	SubtotalINR    int              `json:"subtotal_inr"`
-	ShippingINR    int              `json:"shipping_inr"`
-	TaxINR         int              `json:"tax_inr"`
-	TotalINR       int              `json:"total_inr"`
-	CustomerName   string           `json:"customer_name"`
-	CustomerPhone  string           `json:"customer_phone"`
-	CustomerEmail  string           `json:"customer_email"`
-	ShippingAddr   map[string]any   `json:"shipping_address"`
-	Items          []CartItem       `json:"items"`
-	PaymentStatus  string           `json:"payment_status"`
-	RazorpayOrderID string          `json:"razorpay_order_id"`
-	CreatedAt      time.Time        `json:"created_at"`
+	ID              uuid.UUID      `json:"id"`
+	Status          string         `json:"status"`
+	SubtotalINR     int            `json:"subtotal_inr"`
+	ShippingINR     int            `json:"shipping_inr"`
+	TaxINR          int            `json:"tax_inr"`
+	TotalINR        int            `json:"total_inr"`
+	CustomerName    string         `json:"customer_name"`
+	CustomerPhone   string         `json:"customer_phone"`
+	CustomerEmail   string         `json:"customer_email"`
+	ShippingAddr    map[string]any `json:"shipping_address"`
+	Items           []CartItem     `json:"items"`
+	PaymentStatus   string         `json:"payment_status"`
+	RazorpayOrderID string         `json:"razorpay_order_id"`
+	CreatedAt       time.Time      `json:"created_at"`
 }
 
 func (s *Store) AdminGetOrder(ctx context.Context, orderID uuid.UUID) (OrderDetail, error) {

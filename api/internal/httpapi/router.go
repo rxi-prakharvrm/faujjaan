@@ -63,6 +63,8 @@ func (s *Server) Router() http.Handler {
 			r.Post("/login/password", s.handleLoginPassword)
 			r.Post("/login/otp/request", s.handleOTPRequest)
 			r.Post("/login/otp/verify", s.handleOTPVerify)
+			r.Post("/forgot-password/request", s.handleForgotPasswordRequest)
+			r.Post("/forgot-password/reset", s.handleForgotPasswordReset)
 		})
 		r.Group(func(r chi.Router) {
 			r.Use(s.auth.Middleware)
